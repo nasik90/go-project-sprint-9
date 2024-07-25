@@ -15,16 +15,16 @@ import (
 // сгенерированных чисел.
 func Generator(ctx context.Context, ch chan<- int64, fn func(int64)) {
 	// 1. Функция Generator
+	defer close(ch)
 	i := int64(1)
 	for {
 		select {
 		case <-ctx.Done():
-			close(ch)
 			return
 		default:
 			ch <- i
 			fn(i)
-			atomic.AddInt64(&i, 1)
+			i++
 		}
 
 	}
@@ -33,13 +33,8 @@ func Generator(ctx context.Context, ch chan<- int64, fn func(int64)) {
 // Worker читает число из канала in и пишет его в канал out.
 func Worker(in <-chan int64, out chan<- int64) {
 	// 2. Функция Worker
-	for {
-		val, ok := <-in
-		if !ok {
-			in = nil
-			close(out)
-			return
-		}
+	defer close(out)
+	for val := range in {
 		out <- val
 		time.Sleep(1 * time.Millisecond)
 	}
@@ -77,7 +72,6 @@ func main() {
 	chOut := make(chan int64, NumOut)
 
 	var wg sync.WaitGroup
-	var mu sync.Mutex
 
 	// 4. Собираем числа из каналов outs
 	for i := 0; i < NumOut; i++ {
@@ -89,9 +83,7 @@ func main() {
 					wg.Done()
 					return
 				}
-				mu.Lock()
 				amounts[i]++
-				mu.Unlock()
 				chOut <- val_outs
 			}
 		}(outs[i], i)
@@ -108,21 +100,10 @@ func main() {
 	var sum int64   // сумма чисел результирующего канала
 
 	// 5. Читаем числа из результирующего канала
-loop:
-	for {
-		val_chOut, ok := <-chOut
-		if !ok {
-			chOut = nil
-			break loop
-		}
+	for val_chOut := range chOut {
 		sum += val_chOut
 		count++
 	}
-	// второй вариант части кода выше:
-	// for val_chOut := range chOut {
-	// 	sum += val_chOut
-	// 	count++
-	// }
 
 	fmt.Println("Количество чисел", inputCount, count)
 	fmt.Println("Сумма чисел", inputSum, sum)
